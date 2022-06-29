@@ -1,8 +1,5 @@
-# Ziti Foundation Library
+# Ziti Agent Library
 
-This is a library containing core infrastructure for Ziti.
-
-This is a step towards open-sourcing the entire Ziti ecosystem. We're in the process of working through preparing to alter our internal build and testing systems to accomodate the migration to GitHub.
-
-This is a work in progress.
-
+This library contains client and server code for adding IPC agent support to programs. It has built in support
+for collecting various debugging information, such as stackdumps and various pprof dumps. It can be used
+to update logrus logging levels and may also be extended for custom operations.
