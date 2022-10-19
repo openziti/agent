@@ -28,7 +28,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"io"
-	"io/ioutil"
 	"net"
 	"os"
 	"os/signal"
@@ -136,7 +135,7 @@ func Listen(opts Options) error {
 		if tcpAddr, ok := listener.Addr().(*net.TCPAddr); ok {
 			port := tcpAddr.Port
 			tmpfile = fmt.Sprintf("%s/%d", opts.ConfigDir, os.Getpid())
-			if err = ioutil.WriteFile(tmpfile, []byte(strconv.Itoa(port)), os.ModePerm); err != nil {
+			if err = os.WriteFile(tmpfile, []byte(strconv.Itoa(port)), os.ModePerm); err != nil {
 				return err
 			}
 		}
@@ -156,13 +155,15 @@ type handler struct {
 
 func (self *handler) listen() {
 	logger := pfxlog.Logger()
-
+	defer func() {
+		if err := listener.Close(); err != nil {
+			logger.WithError(err).Error("error closing gops listener")
+		}
+	}()
 	for {
 		if conn, err := listener.Accept(); err != nil {
-			logger.WithError(err).Error("error accepting gops connection")
-			if netErr, ok := err.(net.Error); ok && !netErr.Temporary() {
-				break
-			}
+			logger.WithError(err).Error("error accepting gops connection, closing gops listener")
+			break
 		} else {
 			self.handleConnection(conn)
 		}
