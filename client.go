@@ -1,7 +1,9 @@
 package agent
 
 import (
+	"encoding/json"
 	"fmt"
+	"github.com/michaelquigley/pfxlog"
 	"github.com/mitchellh/go-ps"
 	"github.com/pkg/errors"
 	"io"
@@ -13,20 +15,26 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 )
 
-type gopsProc struct {
-	pid        int
-	executable string
-	file       string
+type Process struct {
+	Pid         int
+	Executable  string
+	UnixSocket  string
+	AppId       string
+	AppType     string
+	AppAlias    string
+	AppVersion  string
+	Contactable bool
 }
 
-func (p *gopsProc) String() string {
-	return fmt.Sprintf("%v (pid %v)", p.executable, p.pid)
+func (p *Process) String() string {
+	return fmt.Sprintf("%v (pid %v)", p.Executable, p.Pid)
 }
 
-func GetGopsProcesses() ([]*gopsProc, error) {
-	var result []*gopsProc
+func GetGopsProcesses() ([]*Process, error) {
+	var result []*Process
 	matches, err := filepath.Glob(path.Join(os.TempDir(), fmt.Sprintf("%v.*.sock", SockPrefix)))
 	if err != nil {
 		return nil, err
@@ -49,11 +57,16 @@ func GetGopsProcesses() ([]*gopsProc, error) {
 					if err != nil {
 						return nil, err
 					}
-					result = append(result, &gopsProc{
-						pid:        pid,
-						executable: proc.Executable(),
-						file:       match,
-					})
+					gopsProcess := &Process{
+						Pid:        pid,
+						Executable: proc.Executable(),
+						UnixSocket: match,
+					}
+					err = FillProcessInfo(gopsProcess)
+					if err != nil {
+						pfxlog.Logger().WithError(err).WithField("pid", pid).Info("unable to get app info")
+					}
+					result = append(result, gopsProcess)
 				}
 			}
 		}
@@ -65,7 +78,7 @@ func GetUnixSockForPid(pid int) string {
 	return path.Join(os.TempDir(), fmt.Sprintf("%v.%v.sock", SockPrefix, pid))
 }
 
-func tooManyProcsError(procs []*gopsProc) error {
+func tooManyProcsError(procs []*Process) error {
 	var list []string
 	for _, v := range procs {
 		list = append(list, v.String())
@@ -101,6 +114,44 @@ func ParseGopsAddress(args []string) (string, error) {
 	return target, nil
 }
 
+func FillProcessInfo(p *Process) error {
+	conn, err := net.DialTimeout("unix", p.UnixSocket, 250*time.Millisecond)
+	if err != nil {
+		return err
+	}
+	p.Contactable = true
+
+	return MakeRequestToConn(conn, AppInfo, nil, func(conn net.Conn) error {
+		buf, err := io.ReadAll(conn)
+		if err != nil {
+			return err
+		}
+		if len(buf) == 0 {
+			// not json, exit out
+			return nil
+		}
+		m := map[string]string{}
+		if err = json.Unmarshal(buf, &m); err != nil {
+			return err
+		}
+
+		p.AppId = m["id"]
+		p.AppType = m["type"]
+		p.AppAlias = m["alias"]
+		p.AppVersion = m["version"]
+
+		return nil
+	})
+}
+
+func MakeProcessRequest(p *Process, signal byte, params []byte, f func(conn net.Conn) error) error {
+	conn, err := net.DialTimeout("unix", p.UnixSocket, 250*time.Millisecond)
+	if err != nil {
+		return err
+	}
+	return MakeRequestToConn(conn, signal, params, f)
+}
+
 func MakeRequest(addr string, signal byte, params []byte, out io.Writer) error {
 	return MakeRequestF(addr, signal, params, func(conn net.Conn) error {
 		_, err := io.Copy(out, conn)
@@ -122,14 +173,14 @@ func MakeRequestF(addr string, signal byte, params []byte, f func(conn net.Conn)
 		if len(procs) > 1 {
 			return tooManyProcsError(procs)
 		}
-		addr = procs[0].file
+		addr = procs[0].UnixSocket
 	} else {
 		procs, err := GetGopsProcesses()
 		found := false
 		if err == nil {
-			var filtered []*gopsProc
+			var filtered []*Process
 			for _, proc := range procs {
-				if strings.Contains(proc.executable, addr) {
+				if strings.Contains(proc.Executable, addr) {
 					filtered = append(filtered, proc)
 				}
 			}
@@ -139,7 +190,7 @@ func MakeRequestF(addr string, signal byte, params []byte, f func(conn net.Conn)
 			if len(filtered) == 1 {
 				found = true
 				network = "unix"
-				addr = filtered[0].file
+				addr = filtered[0].UnixSocket
 			}
 		}
 
@@ -157,6 +208,10 @@ func MakeRequestF(addr string, signal byte, params []byte, f func(conn net.Conn)
 		return err
 	}
 
+	return MakeRequestToConn(conn, signal, params, f)
+}
+
+func MakeRequestToConn(conn net.Conn, signal byte, params []byte, f func(conn net.Conn) error) error {
 	var buf []byte
 	buf = append(buf, Magic...)
 	buf = append(buf, signal)
