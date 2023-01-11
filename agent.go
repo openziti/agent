@@ -23,6 +23,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"github.com/michaelquigley/pfxlog"
 	"github.com/pkg/errors"
@@ -58,6 +59,18 @@ type Options struct {
 	// Addr is the host:port the agent will be listening at.
 	// Optional.
 	Addr string
+
+	// AppId is a way to identify the host application
+	AppId string
+
+	// Type is the host application type
+	AppType string
+
+	// AppAlias is an alternate way to identify the host application
+	AppAlias string
+
+	// AppVersion is the application version
+	AppVersion string
 
 	// ConfigDir is the directory to store the configuration file,
 	// PID of the gops process, filename, port as well as content.
@@ -326,6 +339,27 @@ func (self *handler) handle(conn net.Conn, op byte) (bool, error) {
 			return false, err
 		}
 		_, _ = fmt.Fprintf(conn, "New GC percent set to %v. Previous value was %v.\n", perc, debug.SetGCPercent(int(perc)))
+
+	case AppInfo:
+		result := map[string]string{}
+		if self.options.AppType != "" {
+			result["type"] = self.options.AppType
+		}
+		if self.options.AppId != "" {
+			result["id"] = self.options.AppId
+		}
+		if self.options.AppAlias != "" {
+			result["alias"] = self.options.AppAlias
+		}
+		if self.options.AppVersion != "" {
+			result["version"] = self.options.AppVersion
+		}
+		marshalled, err := json.Marshal(result)
+		if err != nil {
+			return false, err
+		}
+		_, err = conn.Write(marshalled)
+		return false, err
 
 	case SetLogLevel:
 		param, err := bufio.NewReader(conn).ReadByte()
