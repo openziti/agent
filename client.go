@@ -72,6 +72,10 @@ func GetGopsProcesses() ([]*Process, error) {
 					if err != nil {
 						return nil, err
 					}
+					if proc == nil {
+						// indicates an older executable no longer running...
+						continue
+					}
 					gopsProcess := &Process{
 						Pid:        pid,
 						Executable: proc.Executable(),
