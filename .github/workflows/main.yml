@@ -18,9 +18,9 @@ jobs:
           persist-credentials: false
 
       - name: Install Go
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v5
         with:
-          go-version: '1.19.x'
+          go-version-file: ./go.mod
 
       - name: Install Ziti CI
         uses: openziti/ziti-ci@v1
@@ -37,4 +37,3 @@ jobs:
         run: |
           $(go env GOPATH)/bin/ziti-ci configure-git
           $(go env GOPATH)/bin/ziti-ci tag -v -f version
-          $(go env GOPATH)/bin/ziti-ci trigger-github-build openziti/fabric update-dependency --token ${{ secrets.ZITI_CI_GH_TOKEN }}
