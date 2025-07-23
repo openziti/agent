@@ -48,6 +48,9 @@ const (
 	// AppInfo returns application information
 	AppInfo = byte(0xa)
 
+	// HeapDump dumps the full heap
+	HeapDump = byte(0xb)
+
 	// fill in b-f
 
 	// SetGCPercent sets the garbage collection target percentage.
@@ -56,7 +59,7 @@ const (
 	// SetLogLevel sets the logrus level
 	SetLogLevel = byte(0x11)
 
-	// CustomOp reserved for application specific operations
+	// CustomOp reserved for application-specific operations
 	CustomOp = byte(0x12)
 
 	// SetChannelLogLevel sets the log level for a channel
