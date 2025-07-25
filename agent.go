@@ -126,6 +126,9 @@ func Listen(opts Options) error {
 			network = parts[0]
 			addr = parts[1]
 		}
+		if network == "unix" {
+			tmpfile = addr
+		}
 	}
 
 	var err error
@@ -134,7 +137,7 @@ func Listen(opts Options) error {
 	}
 
 	if network == "unix" {
-		if err := os.Chmod(tmpfile, 0700); err != nil {
+		if err := os.Chmod(addr, 0700); err != nil {
 			_ = listener.Close()
 			return err
 		}
@@ -428,6 +431,25 @@ func (self *handler) handle(conn net.Conn, op byte) (bool, error) {
 
 		pfxlog.Logger().Infof("log level for channel %v cleared, was %v", channel, prevLevel)
 		_, _ = fmt.Fprintf(conn, "log level for channel %v cleared, was %v\n", channel, prevLevel)
+
+	case HeapDump:
+		reader := bufio.NewReader(conn)
+		outputFileName, err := self.readVarString(reader, 1024)
+		if err != nil {
+			return false, err
+		}
+		f, err := os.Create(outputFileName)
+		if err != nil {
+			return false, err
+		}
+		defer func() {
+			if err = f.Close(); err != nil {
+				pfxlog.Logger().WithError(err).Errorf("failed to close file %s", outputFileName)
+			}
+		}()
+
+		debug.WriteHeapDump(f.Fd())
+		pfxlog.Logger().Infof("heap dump save to %s", outputFileName)
 
 	default:
 		if self.options.CustomOps != nil {
